@@ -16,6 +16,7 @@ app = FastAPI(title="API de Reentrenamiento - Regresión Logística")
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 MODEL_PATH = os.path.join(BASE_DIR, "model", "regresion_logistica.pkl")
 COLUMNS_PATH = os.path.join(BASE_DIR, "model", "columns.pkl")
+CSV_PATH = os.path.join(BASE_DIR, "dataset", "bank-full-minado.csv")  # Ruta corregida
 
 class DatosEntrada(BaseModel):
     age: int
@@ -27,6 +28,53 @@ class DatosEntrada(BaseModel):
     loan: str
     y: int
 
+# ----------------------------
+# Cargar CSV inicial si la tabla está vacía
+# ----------------------------
+def cargar_csv_inicial():
+    try:
+        with DB.connect() as conn:
+            count = conn.execute(text("SELECT COUNT(*) FROM insertar_datos")).scalar()
+        if count > 0:
+            print("ℹ️ Datos ya existentes en insertar_datos. No se carga CSV.")
+            return
+
+        if not os.path.exists(CSV_PATH):
+            print("⚠️ CSV no encontrado:", CSV_PATH)
+            return
+
+        df = pd.read_csv(CSV_PATH, sep=";")  # Ajusta el separador si es necesario
+
+        # Convertir y a binario si viene como 'yes'/'no'
+        if df["y"].dtype == object:
+            df["y"] = df["y"].map({"yes": 1, "no": 0})
+
+        with DB.begin() as conn:
+            for _, row in df.iterrows():
+                conn.execute(
+                    text("""
+                        INSERT INTO insertar_datos (age, job, marital, education, balance, housing, loan, y)
+                        VALUES (:age, :job, :marital, :education, :balance, :housing, :loan, :y)
+                    """),
+                    {
+                        "age": row["age"],
+                        "job": row["job"],
+                        "marital": row["marital"],
+                        "education": row["education"],
+                        "balance": row["balance"],
+                        "housing": row["housing"],
+                        "loan": row["loan"],
+                        "y": row["y"]
+                    }
+                )
+        print("✅ Datos iniciales cargados desde CSV.")
+    except Exception as e:
+        print("⚠️ Error al cargar CSV:", e)
+        print(traceback.format_exc())
+
+# ----------------------------
+# Reentrenamiento del modelo
+# ----------------------------
 def retrain_model():
     try:
         df = pd.read_sql(text("SELECT * FROM insertar_datos"), DB.connect())
@@ -39,7 +87,6 @@ def retrain_model():
             return
 
         X_encoded = pd.get_dummies(X, columns=["job", "marital", "education", "housing", "loan"], drop_first=True)
-
         joblib.dump(X_encoded.columns, COLUMNS_PATH)
 
         model = LogisticRegression(max_iter=1000)
@@ -82,6 +129,9 @@ def retrain_model():
         print("Error en reentrenamiento:", e)
         print(traceback.format_exc())
 
+# ----------------------------
+# Endpoints
+# ----------------------------
 @app.post("/insertar_datos/")
 def insertar_datos(data: DatosEntrada, background_tasks: BackgroundTasks):
     try:
@@ -146,3 +196,8 @@ def home():
             "POST /predecir/": "Predice con el último modelo entrenado"
         }
     }
+
+# ----------------------------
+# Cargar CSV al iniciar
+# ----------------------------
+cargar_csv_inicial()
