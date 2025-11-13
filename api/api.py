@@ -35,7 +35,7 @@ def cargar_csv_inicial():
     try:
         with DB.connect() as conn:
             count = conn.execute(text("SELECT COUNT(*) FROM insertar_datos")).scalar()
-        if count > 100:
+        if count < 100:
             print("ℹ️ Datos ya existentes en insertar_datos. No se carga CSV.")
             return
 
