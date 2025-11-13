@@ -2,6 +2,7 @@ from fastapi import FastAPI, BackgroundTasks
 from pydantic import BaseModel
 from sqlalchemy import text
 from .config import DB
+from .models import init_db
 import pandas as pd
 import joblib
 from sklearn.linear_model import LogisticRegression
@@ -10,14 +11,15 @@ import os
 from datetime import datetime
 import traceback
 import json
+import io
 
 app = FastAPI(title="API de Reentrenamiento - Regresión Logística")
 
-# ----------------------------
-# Paths
-# ----------------------------
+# Inicializar tablas en Railway
+init_db()
+
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-MODEL_PATH = os.path.join(BASE_DIR, "model", "regresion_logistica.pkl")
+COLUMNS_PATH = os.path.join(BASE_DIR, "model", "columns.pkl")
 
 # ----------------------------
 # Modelo Pydantic
@@ -33,12 +35,36 @@ class DatosEntrada(BaseModel):
     y: int
 
 # ----------------------------
+# Guardar modelo en DB
+# ----------------------------
+def save_model(model):
+    buffer = io.BytesIO()
+    joblib.dump(model, buffer)
+    buffer.seek(0)
+    with DB.begin() as conn:
+        conn.execute(
+            text("INSERT INTO modelos (timestamp, modelo) VALUES (:ts, :modelo)"),
+            {"ts": datetime.now(), "modelo": buffer.read()}
+        )
+
+# ----------------------------
+# Cargar último modelo de DB
+# ----------------------------
+def load_latest_model():
+    with DB.connect() as conn:
+        row = conn.execute(
+            text("SELECT modelo FROM modelos ORDER BY timestamp DESC LIMIT 1")
+        ).fetchone()
+        if row and row[0]:
+            return joblib.load(io.BytesIO(row[0]))
+        return None
+
+# ----------------------------
 # Función para reentrenar modelo
 # ----------------------------
 def retrain_model():
     try:
         df = pd.read_sql(text("SELECT * FROM insertar_datos"), DB.connect())
-
         if df.empty:
             print("⚠️ No hay datos para reentrenar.")
             return
@@ -47,34 +73,31 @@ def retrain_model():
         y = df["y"]
 
         if len(y.unique()) < 2:
-            print(f"⚠️ No se puede reentrenar: solo hay una clase ({y.unique()})")
+            print("⚠️ No se puede reentrenar: solo hay una clase.")
             return
 
         X_encoded = pd.get_dummies(X, columns=["job", "marital", "education", "housing", "loan"], drop_first=True)
 
-        columns_path = os.path.join(BASE_DIR, "model", "columns.pkl")
-        if os.path.exists(columns_path):
-            saved_columns = joblib.load(columns_path)
+        if os.path.exists(COLUMNS_PATH):
+            saved_columns = joblib.load(COLUMNS_PATH)
             for col in saved_columns:
                 if col not in X_encoded.columns:
                     X_encoded[col] = 0
             X_encoded = X_encoded[saved_columns]
         else:
-            joblib.dump(X_encoded.columns, columns_path)
+            joblib.dump(X_encoded.columns, COLUMNS_PATH)
 
         model = LogisticRegression(max_iter=1000)
         model.fit(X_encoded, y)
 
-        joblib.dump(model, MODEL_PATH)
+        # Guardar modelo en DB
+        save_model(model)
 
         y_pred = model.predict(X_encoded)
-
         acc = accuracy_score(y, y_pred)
         prec = precision_score(y, y_pred)
         rec = recall_score(y, y_pred)
         f1 = f1_score(y, y_pred)
-
-        # Extra: matriz de confusión y curva PR
         matriz_confusion = confusion_matrix(y, y_pred).tolist()
         pr_precision, pr_recall, _ = precision_recall_curve(y, model.predict_proba(X_encoded)[:, 1])
 
@@ -99,11 +122,11 @@ def retrain_model():
         print("✅ Métricas guardadas correctamente en metricas")
 
     except Exception as e:
-        print("⚠️ Error al reentrenar el modelo:", e)
+        print("⚠️ Error al reentrenar:", e)
         print(traceback.format_exc())
 
 # ----------------------------
-# Endpoint para insertar datos y reentrenar
+# Endpoints
 # ----------------------------
 @app.post("/insertar_datos/")
 def insertar_datos(data: DatosEntrada, background_tasks: BackgroundTasks):
@@ -117,13 +140,10 @@ def insertar_datos(data: DatosEntrada, background_tasks: BackgroundTasks):
                 data.model_dump()
             )
         background_tasks.add_task(retrain_model)
-        return {"message": "✅ Datos insertados y reentrenamiento iniciado correctamente."}
+        return {"message": "✅ Datos insertados y reentrenamiento iniciado."}
     except Exception as e:
         return {"error": str(e), "trace": traceback.format_exc()}
 
-# ----------------------------
-# Endpoint para ver métricas
-# ----------------------------
 @app.get("/metricas/")
 def get_metrics():
     df = pd.read_sql(text("SELECT * FROM metricas"), DB.connect())
@@ -135,26 +155,14 @@ def get_metrics():
         return df.to_dict(orient="records")
     return []
 
-@app.get("/")
-def home():
-    return {
-        "message": "✅ API de Reentrenamiento corriendo correctamente!",
-        "endpoints": {
-            "POST /insertar_datos/": "Inserta datos y reentrena el modelo",
-            "GET /metricas/": "Obtiene las últimas métricas del modelo"
-        }
-    }
-
-
 @app.post("/predecir/")
 def predecir(data: DatosEntrada):
     try:
-        # Cargar columnas y modelo
-        columns_path = os.path.join(BASE_DIR, "model", "columns.pkl")
-        modelo = joblib.load(MODEL_PATH)
-        columnas = joblib.load(columns_path)
+        modelo = load_latest_model()
+        if modelo is None:
+            return {"error": "No hay modelo entrenado aún"}
 
-        # Convertir entrada a DataFrame y alinear columnas
+        columnas = joblib.load(COLUMNS_PATH)
         entrada = pd.DataFrame([data.model_dump()])
         entrada_encoded = pd.get_dummies(entrada, columns=["job", "marital", "education", "housing", "loan"], drop_first=True)
 
@@ -163,7 +171,6 @@ def predecir(data: DatosEntrada):
                 entrada_encoded[col] = 0
         entrada_encoded = entrada_encoded[columnas]
 
-        # Predicción
         pred = modelo.predict(entrada_encoded)[0]
         prob = modelo.predict_proba(entrada_encoded)[0].tolist()
 
@@ -171,4 +178,13 @@ def predecir(data: DatosEntrada):
     except Exception as e:
         return {"error": str(e), "trace": traceback.format_exc()}
 
-
+@app.get("/")
+def home():
+    return {
+        "message": "✅ API de Reentrenamiento corriendo correctamente!",
+        "endpoints": {
+            "POST /insertar_datos/": "Inserta datos y reentrena el modelo",
+            "GET /metricas/": "Obtiene métricas del modelo",
+            "POST /predecir/": "Predice con el último modelo entrenado"
+        }
+    }
