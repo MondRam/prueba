@@ -28,6 +28,39 @@ class DatosEntrada(BaseModel):
     loan: str
     y: int
 
+def crear_tablas_si_no_existen():
+    try:
+        with DB.begin() as conn:
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS insertar_datos (
+                    age INT,
+                    job TEXT,
+                    marital TEXT,
+                    education TEXT,
+                    balance FLOAT,
+                    housing TEXT,
+                    loan TEXT,
+                    y INT
+                );
+            """))
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS metricas (
+                    timestamp TIMESTAMP,
+                    modelo TEXT,
+                    accuracy FLOAT,
+                    precision FLOAT,
+                    recall FLOAT,
+                    f1 FLOAT,
+                    matriz_confusion TEXT,
+                    pr_precision TEXT,
+                    pr_recall TEXT
+                );
+            """))
+        print("✅ Tablas creadas o ya existentes.")
+    except Exception as e:
+        print("⚠️ Error al crear tablas:", e)
+        print(traceback.format_exc())
+
 # ----------------------------
 # Cargar CSV inicial si la tabla está vacía
 # ----------------------------
@@ -216,4 +249,5 @@ def home():
 # ----------------------------
 # Cargar CSV al iniciar
 # ----------------------------
+crear_tablas_si_no_existen()
 cargar_csv_inicial()
