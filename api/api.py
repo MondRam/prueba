@@ -17,6 +17,7 @@ BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 MODEL_PATH = os.path.join(BASE_DIR, "model", "regresion_logistica.pkl")
 COLUMNS_PATH = os.path.join(BASE_DIR, "model", "columns.pkl")
 
+# Modelo para insertar datos (incluye y)
 class DatosEntrada(BaseModel):
     age: int
     job: str
@@ -26,6 +27,16 @@ class DatosEntrada(BaseModel):
     housing: str
     loan: str
     y: int
+
+# Modelo para predecir (sin y)
+class DatosPrediccion(BaseModel):
+    age: int
+    job: str
+    marital: str
+    education: str
+    balance: float
+    housing: str
+    loan: str
 
 def retrain_model():
     try:
@@ -39,7 +50,6 @@ def retrain_model():
             return
 
         X_encoded = pd.get_dummies(X, columns=["job", "marital", "education", "housing", "loan"], drop_first=True)
-
         joblib.dump(X_encoded.columns, COLUMNS_PATH)
 
         model = LogisticRegression(max_iter=1000)
@@ -99,7 +109,7 @@ def insertar_datos(data: DatosEntrada, background_tasks: BackgroundTasks):
         return {"error": str(e), "trace": traceback.format_exc()}
 
 @app.post("/predecir/")
-def predecir(data: DatosEntrada):
+def predecir(data: DatosPrediccion):
     try:
         if not os.path.exists(MODEL_PATH):
             return {"error": "No hay modelo entrenado aún."}
@@ -135,14 +145,3 @@ def get_metrics():
         return []
     except Exception as e:
         return {"error": str(e), "trace": traceback.format_exc()}
-
-@app.get("/")
-def home():
-    return {
-        "message": "API de Reentrenamiento corriendo",
-        "endpoints": {
-            "POST /insertar_datos/": "Inserta datos y reentrena el modelo",
-            "GET /metricas/": "Obtiene métricas del modelo",
-            "POST /predecir/": "Predice con el último modelo entrenado"
-        }
-    }
