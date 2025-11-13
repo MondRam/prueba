@@ -35,7 +35,7 @@ def cargar_csv_inicial():
     try:
         with DB.connect() as conn:
             count = conn.execute(text("SELECT COUNT(*) FROM insertar_datos")).scalar()
-        if count < 100:
+        if count > 0:  # ✅ solo carga si la tabla está vacía
             print("ℹ️ Datos ya existentes en insertar_datos. No se carga CSV.")
             return
 
@@ -43,22 +43,29 @@ def cargar_csv_inicial():
             print("⚠️ CSV no encontrado:", CSV_PATH)
             return
 
-        df = pd.read_csv(CSV_PATH, sep=",")  # Ajusta el separador si es necesario
+        df = pd.read_csv(CSV_PATH, sep=",")  # ✅ tu CSV usa coma
 
         # Convertir y a binario si viene como 'yes'/'no'
         if df["y"].dtype == object:
             df["y"] = df["y"].map({"yes": 1, "no": 0})
 
-        # Eliminar columnas irrelevantes como 'id' si existen
-        columnas_validas = ["age", "job", "marital", "education", "balance", "housing", "loan", "y"]
-        df = df[[col for col in columnas_validas if col in df.columns]]
+        # ✅ No filtres columnas, ya está minado
+        # Solo asegúrate de que 'y' exista
+        if "y" not in df.columns:
+            raise ValueError("El CSV no contiene la columna objetivo 'y'")
 
         with DB.begin() as conn:
             for _, row in df.iterrows():
                 conn.execute(
                     text("""
-                        INSERT INTO insertar_datos (age, job, marital, education, balance, housing, loan, y)
-                        VALUES (:age, :job, :marital, :education, :balance, :housing, :loan, :y)
+                        INSERT INTO insertar_datos (age, balance, job_blue-collar, job_entrepreneur, job_housemaid,
+                        job_management, job_retired, job_self-employed, job_services, job_student, job_technician,
+                        job_unemployed, job_unknown, marital_married, marital_single, education_secondary,
+                        education_tertiary, education_unknown, housing_yes, loan_yes, y)
+                        VALUES (:age, :balance, :job_blue-collar, :job_entrepreneur, :job_housemaid,
+                        :job_management, :job_retired, :job_self-employed, :job_services, :job_student, :job_technician,
+                        :job_unemployed, :job_unknown, :marital_married, :marital_single, :education_secondary,
+                        :education_tertiary, :education_unknown, :housing_yes, :loan_yes, :y)
                     """),
                     row.to_dict()
                 )
