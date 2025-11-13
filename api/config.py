@@ -1,14 +1,16 @@
 # api/config.py
 from sqlalchemy import create_engine
-import urllib
+import os
 
-# -----------------------------
-# CONFIGURACIÓN DE LA BASE DE DATOS
-# -----------------------------
-DB_SERVER = "mlpserver.database.windows.net"  # Cambia por tu servidor
-DB_NAME = "ml_db"                             # Cambia por tu base de datos
-DB_USER = "mladmin"                            # Cambia por tu usuario
-DB_PASSWORD = "Equipo269"                      # Cambia por tu contraseña
+DB_SERVER = os.environ.get("DB_SERVER")
+DB_NAME = os.environ.get("DB_NAME")
+DB_USER = os.environ.get("DB_USER")
+DB_PASSWORD = os.environ.get("DB_PASSWORD")
+
+DB = create_engine(
+    f"mssql+pymssql://{DB_USER}:{DB_PASSWORD}@{DB_SERVER}/{DB_NAME}",
+    fast_executemany=True
+)                   # Cambia por tu contraseña
 
 # -----------------------------
 # Construir URL de conexión correcta
