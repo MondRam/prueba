@@ -1,1 +1,1 @@
-web: gunicorn -w 4 -k uvicorn.workers.UvicornWorker api.api:app
+web: streamlit run dashboard/dashboard.py --server.port=8080 --server.address=0.0.0.0
