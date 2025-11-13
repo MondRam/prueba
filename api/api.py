@@ -68,7 +68,7 @@ def cargar_csv_inicial():
     try:
         with DB.connect() as conn:
             count = conn.execute(text("SELECT COUNT(*) FROM insertar_datos")).scalar()
-        if count > 100:
+        if count > 0:
             print("ℹ️ Datos ya existentes en insertar_datos. No se carga CSV.")
             return
 
@@ -78,42 +78,39 @@ def cargar_csv_inicial():
 
         df = pd.read_csv(CSV_PATH, sep=",")
 
+        # ⚠️ Solo los primeros 1000 registros
+        df = df.head(1000)
+
         # Reconstruir columnas categóricas desde las dummies
-        # Job
         job_cols = [c for c in df.columns if c.startswith("job_")]
         df["job"] = df[job_cols].idxmax(axis=1).str.replace("job_", "")
 
-        # Marital
         marital_cols = [c for c in df.columns if c.startswith("marital_")]
         df["marital"] = df[marital_cols].idxmax(axis=1).str.replace("marital_", "")
 
-        # Education
         edu_cols = [c for c in df.columns if c.startswith("education_")]
         df["education"] = df[edu_cols].idxmax(axis=1).str.replace("education_", "")
 
-        # Housing
         df["housing"] = df["housing_yes"].map({True: "yes", False: "no"})
-
-        # Loan
         df["loan"] = df["loan_yes"].map({True: "yes", False: "no"})
 
         # Seleccionar columnas crudas + target
         df_final = df[["age", "job", "marital", "education", "balance", "housing", "loan", "y"]]
 
-        # Insertar en la tabla
+        # Inserción masiva
         with DB.begin() as conn:
-            for _, row in df_final.iterrows():
-                conn.execute(
-                    text("""
-                        INSERT INTO insertar_datos (age, job, marital, education, balance, housing, loan, y)
-                        VALUES (:age, :job, :marital, :education, :balance, :housing, :loan, :y)
-                    """),
-                    row.to_dict()
-                )
-        print("✅ Datos iniciales cargados desde CSV.")
+            conn.execute(
+                text("""
+                    INSERT INTO insertar_datos (age, job, marital, education, balance, housing, loan, y)
+                    VALUES (:age, :job, :marital, :education, :balance, :housing, :loan, :y)
+                """),
+                df_final.to_dict(orient="records")
+            )
+        print("✅ Se insertaron los primeros 1000 registros del CSV.")
     except Exception as e:
         print("⚠️ Error al cargar CSV:", e)
         print(traceback.format_exc())
+
 # ----------------------------
 # Reentrenamiento del modelo
 # ----------------------------
