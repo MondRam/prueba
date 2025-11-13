@@ -35,7 +35,7 @@ def cargar_csv_inicial():
     try:
         with DB.connect() as conn:
             count = conn.execute(text("SELECT COUNT(*) FROM insertar_datos")).scalar()
-        if count > 0:  # ✅ solo carga si la tabla está vacía
+        if count > 100:
             print("ℹ️ Datos ya existentes en insertar_datos. No se carga CSV.")
             return
 
@@ -43,29 +43,37 @@ def cargar_csv_inicial():
             print("⚠️ CSV no encontrado:", CSV_PATH)
             return
 
-        df = pd.read_csv(CSV_PATH, sep=",")  # ✅ tu CSV usa coma
+        df = pd.read_csv(CSV_PATH, sep=",")
 
-        # Convertir y a binario si viene como 'yes'/'no'
-        if df["y"].dtype == object:
-            df["y"] = df["y"].map({"yes": 1, "no": 0})
+        # Reconstruir columnas categóricas desde las dummies
+        # Job
+        job_cols = [c for c in df.columns if c.startswith("job_")]
+        df["job"] = df[job_cols].idxmax(axis=1).str.replace("job_", "")
 
-        # ✅ No filtres columnas, ya está minado
-        # Solo asegúrate de que 'y' exista
-        if "y" not in df.columns:
-            raise ValueError("El CSV no contiene la columna objetivo 'y'")
+        # Marital
+        marital_cols = [c for c in df.columns if c.startswith("marital_")]
+        df["marital"] = df[marital_cols].idxmax(axis=1).str.replace("marital_", "")
 
+        # Education
+        edu_cols = [c for c in df.columns if c.startswith("education_")]
+        df["education"] = df[edu_cols].idxmax(axis=1).str.replace("education_", "")
+
+        # Housing
+        df["housing"] = df["housing_yes"].map({True: "yes", False: "no"})
+
+        # Loan
+        df["loan"] = df["loan_yes"].map({True: "yes", False: "no"})
+
+        # Seleccionar columnas crudas + target
+        df_final = df[["age", "job", "marital", "education", "balance", "housing", "loan", "y"]]
+
+        # Insertar en la tabla
         with DB.begin() as conn:
-            for _, row in df.iterrows():
+            for _, row in df_final.iterrows():
                 conn.execute(
                     text("""
-                        INSERT INTO insertar_datos (age, balance, job_blue-collar, job_entrepreneur, job_housemaid,
-                        job_management, job_retired, job_self-employed, job_services, job_student, job_technician,
-                        job_unemployed, job_unknown, marital_married, marital_single, education_secondary,
-                        education_tertiary, education_unknown, housing_yes, loan_yes, y)
-                        VALUES (:age, :balance, :job_blue-collar, :job_entrepreneur, :job_housemaid,
-                        :job_management, :job_retired, :job_self-employed, :job_services, :job_student, :job_technician,
-                        :job_unemployed, :job_unknown, :marital_married, :marital_single, :education_secondary,
-                        :education_tertiary, :education_unknown, :housing_yes, :loan_yes, :y)
+                        INSERT INTO insertar_datos (age, job, marital, education, balance, housing, loan, y)
+                        VALUES (:age, :job, :marital, :education, :balance, :housing, :loan, :y)
                     """),
                     row.to_dict()
                 )
@@ -73,7 +81,6 @@ def cargar_csv_inicial():
     except Exception as e:
         print("⚠️ Error al cargar CSV:", e)
         print(traceback.format_exc())
-
 # ----------------------------
 # Reentrenamiento del modelo
 # ----------------------------
