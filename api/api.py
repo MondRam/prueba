@@ -5,7 +5,7 @@ from .config import DB
 import pandas as pd
 import joblib
 from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, confusion_matrix, precision_recall_curve
 import os
 from datetime import datetime
 import traceback
@@ -37,7 +37,7 @@ class DatosEntrada(BaseModel):
 # ----------------------------
 def retrain_model():
     try:
-        df = pd.read_sql(text("SELECT * FROM dbo.insertar_datos"), DB.connect())
+        df = pd.read_sql(text("SELECT * FROM insertar_datos"), DB.connect())
 
         if df.empty:
             print("⚠️ No hay datos para reentrenar.")
@@ -74,11 +74,15 @@ def retrain_model():
         rec = recall_score(y, y_pred)
         f1 = f1_score(y, y_pred)
 
+        # Extra: matriz de confusión y curva PR
+        matriz_confusion = confusion_matrix(y, y_pred).tolist()
+        pr_precision, pr_recall, _ = precision_recall_curve(y, model.predict_proba(X_encoded)[:, 1])
+
         with DB.begin() as conn:
             conn.execute(
                 text("""
-                     INSERT INTO dbo.metricas (timestamp, modelo, accuracy, precision, recall, f1)
-                     VALUES (:timestamp, :modelo, :acc, :prec, :rec, :f1)
+                     INSERT INTO metricas (timestamp, modelo, accuracy, precision, recall, f1, matriz_confusion, pr_precision, pr_recall)
+                     VALUES (:timestamp, :modelo, :acc, :prec, :rec, :f1, :matriz_confusion, :pr_precision, :pr_recall)
                      """),
                 {
                     "timestamp": datetime.now(),
@@ -86,10 +90,13 @@ def retrain_model():
                     "acc": acc,
                     "prec": prec,
                     "rec": rec,
-                    "f1": f1
+                    "f1": f1,
+                    "matriz_confusion": json.dumps(matriz_confusion),
+                    "pr_precision": json.dumps(pr_precision.tolist()),
+                    "pr_recall": json.dumps(pr_recall.tolist())
                 }
             )
-        print("✅ Métricas guardadas correctamente en dbo.metricas")
+        print("✅ Métricas guardadas correctamente en metricas")
 
     except Exception as e:
         print("⚠️ Error al reentrenar el modelo:", e)
@@ -104,7 +111,7 @@ def insertar_datos(data: DatosEntrada, background_tasks: BackgroundTasks):
         with DB.begin() as conn:
             conn.execute(
                 text("""
-                    INSERT INTO dbo.insertar_datos (age, job, marital, education, balance, housing, loan, y)
+                    INSERT INTO insertar_datos (age, job, marital, education, balance, housing, loan, y)
                     VALUES (:age, :job, :marital, :education, :balance, :housing, :loan, :y)
                 """),
                 data.model_dump()
@@ -119,7 +126,7 @@ def insertar_datos(data: DatosEntrada, background_tasks: BackgroundTasks):
 # ----------------------------
 @app.get("/metricas/")
 def get_metrics():
-    df = pd.read_sql(text("SELECT * FROM dbo.metricas"), DB.connect())
+    df = pd.read_sql(text("SELECT * FROM metricas"), DB.connect())
     if not df.empty:
         df['timestamp'] = df['timestamp'].astype(str)
         for col in ['matriz_confusion', 'pr_precision', 'pr_recall']:
