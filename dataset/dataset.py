@@ -26,10 +26,11 @@ df = df.drop_duplicates()
 # 3. SEPARAR TARGET
 # ================================
 # Convertimos 'y' a 0/1
-y = df["y"].map({"yes":1, "no":0})
+y = df["y"].map({"yes": 1, "no": 0})
 
-# Variables independientes
-X = df.drop(columns=["y"])
+# Filtrar solo las columnas que usas en el formulario
+columnas_usadas = ["age", "job", "marital", "education", "balance", "housing", "loan"]
+X = df[columnas_usadas]
 
 # ================================
 # 4. TRANSFORMACIÓN DE DATOS
