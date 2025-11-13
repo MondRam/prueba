@@ -43,7 +43,7 @@ def cargar_csv_inicial():
             print("⚠️ CSV no encontrado:", CSV_PATH)
             return
 
-        df = pd.read_csv(CSV_PATH, sep=";")  # Ajusta el separador si es necesario
+        df = pd.read_csv(CSV_PATH, sep=",")  # Ajusta el separador si es necesario
 
         # Convertir y a binario si viene como 'yes'/'no'
         if df["y"].dtype == object:
