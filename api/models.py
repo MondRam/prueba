@@ -4,7 +4,7 @@ from .config import DB
 # Metadata para agrupar las definiciones
 metadata = MetaData()
 
-'''
+
 # -----------------------------
 # Tabla de datos de entrenamiento
 # -----------------------------
@@ -37,7 +37,7 @@ metricas = Table(
     Column("pr_precision", JSON),
     Column("pr_recall", JSON)
 )
-'''
+
 
 # -----------------------------
 # Tabla de modelos persistidos
