@@ -8,8 +8,9 @@ from sklearn.metrics import ConfusionMatrixDisplay
 from scipy.stats import ttest_1samp
 import json
 import numpy as np
+import os
 
-API_URL = "http://127.0.0.1:8000"  # Cambia si tu API está en otra URL
+API_URL = os.getenv("API_URL") #ambia si tu API está en otra URL
 
 st.title("🤖 Dashboard - Modelo Logístico")
 
