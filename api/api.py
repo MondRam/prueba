@@ -49,6 +49,10 @@ def cargar_csv_inicial():
         if df["y"].dtype == object:
             df["y"] = df["y"].map({"yes": 1, "no": 0})
 
+        # Eliminar columnas irrelevantes como 'id' si existen
+        columnas_validas = ["age", "job", "marital", "education", "balance", "housing", "loan", "y"]
+        df = df[[col for col in columnas_validas if col in df.columns]]
+
         with DB.begin() as conn:
             for _, row in df.iterrows():
                 conn.execute(
@@ -56,16 +60,7 @@ def cargar_csv_inicial():
                         INSERT INTO insertar_datos (age, job, marital, education, balance, housing, loan, y)
                         VALUES (:age, :job, :marital, :education, :balance, :housing, :loan, :y)
                     """),
-                    {
-                        "age": row["age"],
-                        "job": row["job"],
-                        "marital": row["marital"],
-                        "education": row["education"],
-                        "balance": row["balance"],
-                        "housing": row["housing"],
-                        "loan": row["loan"],
-                        "y": row["y"]
-                    }
+                    row.to_dict()
                 )
         print("✅ Datos iniciales cargados desde CSV.")
     except Exception as e:
@@ -87,7 +82,7 @@ def retrain_model():
             return
 
         X_encoded = pd.get_dummies(X, columns=["job", "marital", "education", "housing", "loan"], drop_first=True)
-        joblib.dump(X_encoded.columns, COLUMNS_PATH)
+        joblib.dump(X_encoded.columns.tolist(), COLUMNS_PATH)
 
         model = LogisticRegression(max_iter=1000)
         model.fit(X_encoded, y)
@@ -158,12 +153,19 @@ def predecir(data: DatosEntrada):
         columnas = joblib.load(COLUMNS_PATH)
 
         entrada = pd.DataFrame([data.model_dump()])
+
+        # Eliminar columnas irrelevantes como 'y' o 'id' si existen
+        entrada = entrada.drop(columns=[col for col in ["y", "id"] if col in entrada.columns])
+
         entrada_encoded = pd.get_dummies(entrada, columns=["job", "marital", "education", "housing", "loan"], drop_first=True)
 
+        # Asegurar que todas las columnas necesarias estén presentes
         for col in columnas:
             if col not in entrada_encoded.columns:
                 entrada_encoded[col] = 0
-        entrada_encoded = entrada_encoded[columnas]
+
+        # Eliminar columnas sobrantes y ordenar
+        entrada_encoded = entrada_encoded[[col for col in columnas]]
 
         pred = int(model.predict(entrada_encoded)[0])
         prob = model.predict_proba(entrada_encoded)[0].tolist()
