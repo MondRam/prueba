@@ -35,7 +35,7 @@ def cargar_csv_inicial():
     try:
         with DB.connect() as conn:
             count = conn.execute(text("SELECT COUNT(*) FROM insertar_datos")).scalar()
-        if count > 0:
+        if count > 100:
             print("ℹ️ Datos ya existentes en insertar_datos. No se carga CSV.")
             return
 
@@ -43,12 +43,13 @@ def cargar_csv_inicial():
             print("⚠️ CSV no encontrado:", CSV_PATH)
             return
 
-        df = pd.read_csv(CSV_PATH, sep=",")  # ✅ usar coma como separador
+        df = pd.read_csv(CSV_PATH, sep=";")  # Ajusta el separador si es necesario
 
         # Convertir y a binario si viene como 'yes'/'no'
         if df["y"].dtype == object:
             df["y"] = df["y"].map({"yes": 1, "no": 0})
 
+        # Eliminar columnas irrelevantes como 'id' si existen
         columnas_validas = ["age", "job", "marital", "education", "balance", "housing", "loan", "y"]
         df = df[[col for col in columnas_validas if col in df.columns]]
 
