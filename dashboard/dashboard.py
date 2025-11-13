@@ -13,10 +13,11 @@ API_URL = os.getenv("API_URL")  # Define esta variable en Railway con la URL pú
 st.title("🤖 Dashboard - Modelo Logístico")
 
 # -----------------------------
-# 1️⃣ Formulario de inserción
+# 🔄 Insertar registro y predecir
 # -----------------------------
-st.header("🧾 Insertar nuevo registro")
-with st.form("formulario"):
+st.header("🧾 Insertar registro y obtener predicción")
+
+with st.form("formulario_unico"):
     age = st.number_input("Edad", 18, 100)
     job = st.selectbox("Ocupación", ["admin.","blue-collar","technician","services","management"])
     marital = st.selectbox("Estado civil", ["single","married","divorced"])
@@ -25,22 +26,35 @@ with st.form("formulario"):
     housing = st.selectbox("Hipoteca", ["yes","no"])
     loan = st.selectbox("Préstamo", ["yes","no"])
     y = st.selectbox("Aceptó producto", [0,1])
-    submitted = st.form_submit_button("Guardar y reentrenar")
+    submitted = st.form_submit_button("Guardar y predecir")
 
     if submitted:
-        res = requests.post(f"{API_URL}/insertar_datos/", json={
+        payload = {
             "age": age, "job": job, "marital": marital, "education": education,
             "balance": balance, "housing": housing, "loan": loan, "y": y
-        })
-        if res.ok:
-            st.success("✅ Dato insertado y modelo reentrenado.")
+        }
+
+        # Insertar en la base y reentrenar
+        res_insert = requests.post(f"{API_URL}/insertar_datos/", json=payload)
+        if res_insert.ok:
+            st.success("✅ Registro guardado y modelo reentrenado.")
         else:
-            st.error(f"❌ Error al insertar: {res.text}")
+            st.error(f"❌ Error al insertar: {res_insert.text}")
+
+        # Pedir predicción
+        res_pred = requests.post(f"{API_URL}/predecir/", json=payload)
+        if res_pred.ok:
+            resultado = res_pred.json()
+            st.success(f"🔮 Predicción: {resultado['prediccion']}")
+            st.write("Probabilidades:", resultado["probabilidades"])
+        else:
+            st.error(f"❌ Error en predicción: {res_pred.text}")
 
 # -----------------------------
-# 2️⃣ Métricas históricas
+# 📈 Métricas del modelo
 # -----------------------------
-st.header("📈 Métricas del modelo")
+st.header("📊 Métricas del modelo")
+
 try:
     res = requests.get(f"{API_URL}/metricas/")
     if res.ok:
@@ -93,30 +107,3 @@ try:
         st.error(f"❌ Error al obtener métricas: {res.status_code}")
 except Exception as e:
     st.error(f"❌ Error al procesar métricas: {e}")
-
-# -----------------------------
-# 3️⃣ Predicción con el modelo
-# -----------------------------
-st.header("🔮 Predicción con el modelo")
-with st.form("prediccion"):
-    age = st.number_input("Edad (predicción)", 18, 100)
-    job = st.selectbox("Ocupación (predicción)", ["admin.","blue-collar","technician","services","management"])
-    marital = st.selectbox("Estado civil (predicción)", ["single","married","divorced"])
-    education = st.selectbox("Educación (predicción)", ["primary","secondary","tertiary"])
-    balance = st.number_input("Balance (predicción)", -5000, 100000)
-    housing = st.selectbox("Hipoteca (predicción)", ["yes","no"])
-    loan = st.selectbox("Préstamo (predicción)", ["yes","no"])
-    y = st.selectbox("Aceptó producto (predicción)", [0,1])
-    submitted_pred = st.form_submit_button("Predecir")
-
-    if submitted_pred:
-        res = requests.post(f"{API_URL}/predecir/", json={
-            "age": age, "job": job, "marital": marital, "education": education,
-            "balance": balance, "housing": housing, "loan": loan, "y": y
-        })
-        if res.ok:
-            resultado = res.json()
-            st.success(f"✅ Predicción: {resultado['prediccion']}")
-            st.write("Probabilidades:", resultado["probabilidades"])
-        else:
-            st.error(f"❌ Error en predicción: {res.text}")
