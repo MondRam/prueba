@@ -144,3 +144,27 @@ def home():
             "GET /metricas/": "Obtiene las últimas métricas del modelo"
         }
     }
+@app.post("/predecir/")
+def predecir(data: DatosEntrada):
+    try:
+        # Cargar columnas y modelo
+        columns_path = os.path.join(BASE_DIR, "model", "columns.pkl")
+        modelo = joblib.load(MODEL_PATH)
+        columnas = joblib.load(columns_path)
+
+        # Convertir entrada a DataFrame y alinear columnas
+        entrada = pd.DataFrame([data.model_dump()])
+        entrada_encoded = pd.get_dummies(entrada, columns=["job", "marital", "education", "housing", "loan"], drop_first=True)
+
+        for col in columnas:
+            if col not in entrada_encoded.columns:
+                entrada_encoded[col] = 0
+        entrada_encoded = entrada_encoded[columnas]
+
+        # Predicción
+        pred = modelo.predict(entrada_encoded)[0]
+        prob = modelo.predict_proba(entrada_encoded)[0].tolist()
+
+        return {"prediccion": int(pred), "probabilidades": prob}
+    except Exception as e:
+        return {"error": str(e), "trace": traceback.format_exc()}
